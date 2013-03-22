@@ -12,14 +12,19 @@ using System.Xml;
 
 namespace ZoomifyDownloader
 {
-
-
+    // TODO:
+    // Pull zoomify links out of webpage that is display to the public.
+    // Allow user to set options of output image format.
+    // Save frequent used settings.
+    // Allow batch downloading and renaming.
+    // Allow renaming masks.  
     public partial class Form1 : Form
     {
         protected ImageFormat outFormat = ImageFormat.Png;
         public string SettingsFile = "settings.xml";
         protected string ExecutionPath;
         protected SaveFileConflictMode saveMode = SaveFileConflictMode.Ask;
+        public string lastSavedFile = "";
 
         public Form1()
         {
@@ -72,6 +77,14 @@ namespace ZoomifyDownloader
                 writer.WriteValue(comboBox1.SelectedIndex.ToString());
                 writer.WriteEndAttribute();
 
+                writer.WriteStartAttribute("OPEN_FOLDER_ON_FINISH");
+                writer.WriteValue(checkBox1.Checked.ToString());
+                writer.WriteEndAttribute();
+
+                writer.WriteStartAttribute("DOWNLOAD_MODE");
+                writer.WriteValue(   radioButton1.Checked  ? "Target" : "Batch" );
+                writer.WriteEndAttribute();
+
                 writer.WriteEndElement();
                 writer.WriteEndDocument();
 
@@ -94,84 +107,142 @@ namespace ZoomifyDownloader
                 textBox2.Text = properties.Attributes.GetNamedItem("DOWNLOAD_FOLDER").Value;
                 textBox3.Text = properties.Attributes.GetNamedItem("NAME_MASK").Value;
                 comboBox1.SelectedIndex = Convert.ToInt32(properties.Attributes.GetNamedItem("OUTPUT_FORMAT").Value);
+                checkBox1.Checked = Convert.ToBoolean(properties.Attributes.GetNamedItem("OPEN_FOLDER_ON_FINISH").Value);
+                switch (properties.Attributes.GetNamedItem("DOWNLOAD_MODE").Value)
+                {
+                    case "Target":
+                    default:
+                        radioButton1.Checked = true;
+                        break;
+                    case "Batch":
+                        radioButton2.Checked = true;
+                        break;                   
+                }
+
             }
             catch
             {
                 return;
             }
         }
+        //Shows a message dialog asking if the user would like to replace files that already exist.
+        protected SaveFileConflictMode QueryConflictDialog(string filename, SaveFileConflictMode yesMode, SaveFileConflictMode noMode)
+        {
+            //Do Message Dialog
+            string messageBoxText = "A file with the name: " + filename + " already exists. Do you want to replace it?";
+            string caption = "Warning - Potential Unwanted File Replacement";
+            MessageBoxButtons button = MessageBoxButtons.YesNoCancel;
+            MessageBoxIcon icon = MessageBoxIcon.Warning;
+            // Display message box
+            DialogResult result = MessageBox.Show(messageBoxText, caption, button, icon);
+            // Process message box results 
+            switch (result)
+            {
+                case DialogResult.Yes:
+                    // User pressed Yes button 
+                    // ...
+                    return yesMode;
+                case DialogResult.No:
+                default:
+                    // User pressed No button
+                    // ...
+                    return noMode;
+                case DialogResult.Cancel:                
+                    // User pressed Cancel button 
+                    // ...
+                    return SaveFileConflictMode.DoNothing;
+            }
+        }
+
+        private void DownloadDirectURL(string url, string path, string filename)
+        {
+            DownloadDirectURL(url, path, filename, false);
+        }
+        private void DownloadDirectURL(string url, string path, string filename, bool batchMode)
+        {
+            // Check for unwanted file replacement first.
+            string saveFilePath = path + "\\" + filename + "." + outFormat.ToString().ToLower();
+            if (File.Exists(saveFilePath) && saveMode == SaveFileConflictMode.Ask)
+            {
+                if (batchMode)
+                {
+                    saveMode = QueryConflictDialog(saveFilePath, SaveFileConflictMode.ReplaceAlways, SaveFileConflictMode.IncrementAlways);
+                }
+                else
+                {
+                    saveMode = QueryConflictDialog(saveFilePath, SaveFileConflictMode.Replace, SaveFileConflictMode.Increment);
+                }                
+            }
+            //Open Zoomify Path & Download
+            Bitmap download = Dezoomify.Download(url);
+
+            //Save Image on Success
+            if (download != null)
+            {
+                lastSavedFile = Dezoomify.Save(download, outFormat, path, filename, saveMode);
+            }
+            download.Dispose();
+            //Check if the user has specified to always use one conflict resolving method for the rest of the program session.
+            if (saveMode != SaveFileConflictMode.IncrementAlways && saveMode != SaveFileConflictMode.ReplaceAlways)
+            {
+                saveMode = SaveFileConflictMode.Ask;
+            }
+        }
+
 
         // Starts download.
         private void button1_click(object sender, EventArgs e)
         {
-            //Allow user to set options of output image format.
-            //Save frequent and last used settings.
-            //Allow batch downloading and renaming.
-            //Allow renaming masks.
-            //Optional open folder upon finish.      
+            SaveSettings(SettingsFile);
+            // Download using a URL that points directly to the zoomify folder.   
             if (radioButton1.Checked)
             {
-                //Open Zoomify Path & Download
-                Bitmap download = Dezoomify.Download(textBox1.Text);
-
-                //Save Image on Success
-                if (download != null)
+                DownloadDirectURL(textBox1.Text, textBox2.Text, textBox3.Text);
+                if (checkBox1.Checked)
                 {
-                    string saveFilePath = textBox2.Text + "\\" + textBox3.Text + "." + outFormat.ToString().ToLower();
-                    if (File.Exists(saveFilePath) && saveMode == SaveFileConflictMode.Ask)
-                    {
-                        //DoDialog Box
-                        string messageBoxText = "A file with the name: " + textBox3.Text + " already exists. Do you want to replace it?";
-                        string caption = "Warning - Potential Unwanted File Replacement";
-                        MessageBoxButtons button = MessageBoxButtons.YesNoCancel;
-                        MessageBoxIcon icon = MessageBoxIcon.Warning;
-                        // Display message box
-                        DialogResult result = MessageBox.Show(messageBoxText, caption, button, icon);
-                        // Process message box results 
-                        switch (result)
-                        {
-                            case DialogResult.Yes:
-                                // User pressed Yes button 
-                                // ...
-                                saveMode = SaveFileConflictMode.Replace;
-                                Dezoomify.Save(download, outFormat, textBox2.Text, textBox3.Text, saveMode);
-                                break;
-                            case DialogResult.No:
-                                // User pressed No button 
-                                // ...
-                                saveMode = SaveFileConflictMode.Increment;
-                                Dezoomify.Save(download, outFormat, textBox2.Text, textBox3.Text, saveMode);
-                                break;
-                            case DialogResult.Cancel:
-                                // User pressed Cancel button 
-                                // ... 
-                                break;
-                        }
-                    }
-                    else
-                    {
-                        Dezoomify.Save(download, outFormat, textBox2.Text, textBox3.Text, saveMode);
-                    }
-                    
+                    OpenFolder(this, null);
                 }
             }
             else if (radioButton2.Checked)
             {
-                //Open File
-                //Extract Paths
-                //Download
-                //Save
+                // Batch download using a list of URL that point directly to the zoomify folder.
+                // Open File
                 StreamReader streamReader = new StreamReader(textBox4.Text);
                 string text = streamReader.ReadToEnd();
                 streamReader.Close();
+                List<string> urls = new List<string>();
+                // Extract Paths
+                string[] filter = { "\r\n", "\r", "\n" };
+                urls.AddRange(text.Split(filter, StringSplitOptions.RemoveEmptyEntries));
+                // Validate that each item is a url.
+                foreach (string i in urls)
+                {
+                    // Download & Save
+                    DownloadDirectURL(i, textBox2.Text, textBox3.Text, true);
+                }
+                if (checkBox1.Checked)
+                {
+                    OpenFolder(this, null);
+                }
+                saveMode = SaveFileConflictMode.Ask;
             }
             
         }
         // Opens the folder where the images will be downloaded to.
-        private void button3_Click(object sender, EventArgs e)
+        private void OpenFolder(object sender, EventArgs e)
         {
             Console.WriteLine("File will be saved to: " + textBox2.Text + "\\" + textBox3.Text + "." + outFormat.ToString().ToLower());
-            System.Diagnostics.Process.Start("explorer.exe", @textBox2.Text);
+            if (lastSavedFile.Length > 0)
+            {
+                //Open to folder, selecting last downloaded file.
+                System.Diagnostics.Process.Start("explorer.exe", @"/select, " + lastSavedFile);
+            }
+            else 
+            {
+                //Open to folder.
+                System.Diagnostics.Process.Start("explorer.exe", @textBox2.Text);
+            }
+            
         }
         // Exits the program.
         private void button2_Click(object sender, EventArgs e)
@@ -285,6 +356,21 @@ namespace ZoomifyDownloader
         private void Form1_FormClosing(object sender, FormClosingEventArgs e)
         {
             SaveSettings(SettingsFile);
+        }
+
+        private void textBox4_MouseDoubleClick(object sender, MouseEventArgs e)
+        {
+            OpenFileDialog openFileDialog1 = new OpenFileDialog();
+            openFileDialog1.Filter = "Text File|*.txt";
+            openFileDialog1.Title = "Save an Image File";
+            openFileDialog1.InitialDirectory = textBox2.Text;
+            openFileDialog1.ShowDialog();
+
+            // If the file name is not an empty string open it for saving.
+            if (openFileDialog1.FileName != "")
+            {
+                textBox4.Text = openFileDialog1.FileName;
+            }
         }
     }
 }

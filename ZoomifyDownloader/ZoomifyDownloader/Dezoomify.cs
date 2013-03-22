@@ -48,6 +48,7 @@ namespace ZoomifyDownloader
     public enum SaveFileConflictMode
     {
         Ask = 0,
+        DoNothing,
         Replace,
         Increment,
         ReplaceAlways,
@@ -93,15 +94,17 @@ namespace ZoomifyDownloader
         }
 
         // Save an image to file with file replacement protection settings.
-        public static void Save(Bitmap image, ImageFormat format, string path, string filename, SaveFileConflictMode method)
+        public static string Save(Bitmap image, ImageFormat format, string path, string filename, SaveFileConflictMode method)
         {
             // Is the textbox3 an absolute or relative path?
             string saveFilePath = path + "\\" + filename + "." + format.ToString().ToLower();
             switch (method)
             {
                 case SaveFileConflictMode.Replace:
+                case SaveFileConflictMode.ReplaceAlways:
                     break;
                 case SaveFileConflictMode.Increment:
+                case SaveFileConflictMode.IncrementAlways:
                 default:
                     int fileCount = 0;
                     while (File.Exists(saveFilePath))
@@ -110,9 +113,13 @@ namespace ZoomifyDownloader
                         saveFilePath = path + "\\" + filename + " (" + fileCount.ToString() + ")" + "." + format.ToString().ToLower();
                     }
                     break;
+                case SaveFileConflictMode.DoNothing:
+                    Console.WriteLine("Canceled download");
+                    return "";
             }           
             Console.WriteLine("Finished download: " + saveFilePath);
             image.Save(saveFilePath, format);
+            return saveFilePath;
         }
     
         // Downloads a file and returns it's contents.
