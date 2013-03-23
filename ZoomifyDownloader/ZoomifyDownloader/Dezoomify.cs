@@ -97,7 +97,12 @@ namespace ZoomifyDownloader
         public static string Save(Bitmap image, ImageFormat format, string path, string filename, SaveFileConflictMode method)
         {
             // Is the textbox3 an absolute or relative path?
-            string saveFilePath = path + "\\" + filename + "." + format.ToString().ToLower();
+            string fileExtension = "." + format.ToString().ToLowerInvariant();            
+            if (Dezoomify.StringIsLast(filename, fileExtension))
+            {
+                filename = filename.Remove(fileExtension.Length);
+            }
+            string saveFilePath = path + "\\" + filename + fileExtension;
             switch (method)
             {
                 case SaveFileConflictMode.Replace:
@@ -110,7 +115,7 @@ namespace ZoomifyDownloader
                     while (File.Exists(saveFilePath))
                     {
                         fileCount++;
-                        saveFilePath = path + "\\" + filename + " (" + fileCount.ToString() + ")" + "." + format.ToString().ToLower();
+                        saveFilePath = path + "\\" + filename + " (" + fileCount.ToString() + ")" + fileExtension;
                     }
                     break;
                 case SaveFileConflictMode.DoNothing:
@@ -121,35 +126,52 @@ namespace ZoomifyDownloader
             image.Save(saveFilePath, format);
             return saveFilePath;
         }
+
+        // Check if a given substring is at the very end of the string.
+        public static bool StringIsLast(string target, string substring)
+        {
+            if (target.Contains(substring) && target.LastIndexOf(substring) == (target.Length - substring.Length))
+            {
+                return true;
+            }
+            return false;
+        }
     
         // Downloads a file and returns it's contents.
         public static string DownloadFile(string url)
         {
             if (url != null && url.Length > 0)
             {
-                url = Uri.EscapeUriString(url);
-                // Start download of the image information file.
-                WebRequest request = WebRequest.Create(url);
-                request.ContentType = "text";
-                request.Method = "GET";
-                // If required by the server, set the credentials.
-                request.Credentials = CredentialCache.DefaultCredentials;
-                // Get the response.
-                WebResponse response = request.GetResponse();
-                // Display the status.
-                Console.WriteLine(((HttpWebResponse)response).StatusDescription);
-                // Get the stream containing content returned by the server.
-                Stream dataStream = response.GetResponseStream();
-                // Open the stream using a StreamReader for easy access.
-                StreamReader reader = new StreamReader(dataStream);
-                // Read the content.
-                string responseFromServer = reader.ReadToEnd();
-                // Display the content.
-                Console.WriteLine(responseFromServer);
-                // Clean up the streams and the response.
-                reader.Close();
-                response.Close();
-                return responseFromServer;
+                try
+                {
+                    url = Uri.EscapeUriString(url);
+                    // Start download of the image information file.
+                    WebRequest request = WebRequest.Create(url);
+                    request.ContentType = "text";
+                    request.Method = "GET";
+                    // If required by the server, set the credentials.
+                    request.Credentials = CredentialCache.DefaultCredentials;
+                    // Get the response.
+                    WebResponse response = request.GetResponse();
+                    // Display the status.
+                    Console.WriteLine(((HttpWebResponse)response).StatusDescription);
+                    // Get the stream containing content returned by the server.
+                    Stream dataStream = response.GetResponseStream();
+                    // Open the stream using a StreamReader for easy access.
+                    StreamReader reader = new StreamReader(dataStream);
+                    // Read the content.
+                    string responseFromServer = reader.ReadToEnd();
+                    // Display the content.
+                    Console.WriteLine(responseFromServer);
+                    // Clean up the streams and the response.
+                    reader.Close();
+                    response.Close();
+                    return responseFromServer;
+                }
+                catch
+                {
+                    return "";
+                }
             }
             return "";
         }
@@ -178,6 +200,35 @@ namespace ZoomifyDownloader
             //reader.Close();
             response.Close();
             return outputStream;
+        }
+
+        // Sees if a file called ImageProperties exists at a given url.
+        public static bool TryGetImageProperties(string url)
+        {
+            bool fileExists = false;
+            string infoXMLFile = url;
+            //Zoomify Images are stored in pieces with a control file.
+            //Determine if the path is already linking to the proper file or not.
+            if (!infoXMLFile.Contains("ImageProperties.xml"))
+            {
+                infoXMLFile += "/ImageProperties.xml";
+            }
+            infoXMLFile = Uri.EscapeUriString(infoXMLFile);
+            WebRequest request = WebRequest.Create(infoXMLFile);
+            request.ContentType = "text/xml";
+            request.Method = "GET";
+            // If required by the server, set the credentials.
+            request.Credentials = CredentialCache.DefaultCredentials;
+            // Get the response.
+            WebResponse response = request.GetResponse();
+            // Display the status.
+            Console.WriteLine(((HttpWebResponse)response).StatusCode);
+            if (((HttpWebResponse)response).StatusCode == HttpStatusCode.OK)
+            {
+                fileExists = true;
+            }
+            response.Close();
+            return fileExists;
         }
 
         // Retrieves image properties given an XML file.

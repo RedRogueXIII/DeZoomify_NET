@@ -20,7 +20,12 @@ namespace ZoomifyDownloader
     // Allow renaming masks.  
     public partial class Form1 : Form
     {
-        protected ImageFormat outFormat = ImageFormat.Png;
+        private static readonly ImageFormat defaultFormat = ImageFormat.Png;
+        private static readonly string batchCommandNewMask = "*mask*";
+        private static readonly string batchCommandNewFolder = "*dir*";
+        private static readonly string batchCommandNewFormat = "*format*";
+
+        protected ImageFormat outFormat;
         public string SettingsFile = "settings.xml";
         protected string ExecutionPath;
         protected SaveFileConflictMode saveMode = SaveFileConflictMode.Ask;
@@ -28,6 +33,7 @@ namespace ZoomifyDownloader
 
         public Form1()
         {
+            outFormat = defaultFormat;
             InitializeComponent();
             textBox2.Text = System.Environment.GetFolderPath(Environment.SpecialFolder.MyPictures, Environment.SpecialFolderOption.Create);
             comboBox1.SelectedIndex = 0;
@@ -161,7 +167,13 @@ namespace ZoomifyDownloader
         private void DownloadDirectURL(string url, string path, string filename, bool batchMode)
         {
             // Check for unwanted file replacement first.
-            string saveFilePath = path + "\\" + filename + "." + outFormat.ToString().ToLower();
+            // Check if the filename already has the right file extension.
+            string fileExtension = "."+outFormat.ToString().ToLowerInvariant();
+            string saveFilePath = path + "\\" + filename;
+            if (!Dezoomify.StringIsLast(filename, fileExtension))
+            {
+                saveFilePath += fileExtension;
+            }
             if (File.Exists(saveFilePath) && saveMode == SaveFileConflictMode.Ask)
             {
                 if (batchMode)
@@ -189,18 +201,121 @@ namespace ZoomifyDownloader
             }
         }
 
+        // Determine if the URL given is a valid Zoomify Direct URL to the image folder.
+        public static bool isDirectURL(string url)
+        {
+            // Clue 1 - URL does not point to a file ( has no file extension ).
+            // Clue 2 - URL is relative ( has no domain. )
+            // Test 1 - Try getting an Image Properties file from the URL.
+            if (!url.Contains("/") || !url.Contains(".")) 
+            {
+                Console.WriteLine("Yeah this isn't a url: "+url);
+                return false;
+            }
+            if ( Dezoomify.TryGetImageProperties(url) == true ) //url.Substring(url.LastIndexOf("\\")).Contains(".") == false && url.Substring(url.IndexOf(".")).Contains("\\") == true &&  )
+            {
+                return true;
+            }
+            return false;
+        }
+
+        // Converts string to an Imaging.ImageFormat enum.
+        public static ImageFormat StringToImageFormat(string input)
+        {
+            if (input.Contains("png"))
+            {
+                return ImageFormat.Png;
+            }
+            else if (input.Contains("jpg") || input.Contains("jpeg")) 
+            {
+                return ImageFormat.Jpeg;
+            }
+            else if (input.Contains("bmp"))
+            {
+                return ImageFormat.Bmp;
+            }
+            else if (input.Contains("gif"))
+            {
+                return ImageFormat.Gif;
+            }
+            else if (input.Contains("tiff"))
+            {
+                return ImageFormat.Tiff;
+            }
+            return defaultFormat;
+        }
+
+        // Converts a string with masks to a final string.
+        public string FinalizeMask(string masks, string path)
+        {
+            // Name of file - field makes no sense in zoomify download context.
+            masks = masks.Replace("*name*", "");
+            // Output file format extension
+            masks = masks.Replace("*ext*", outFormat.ToString().ToLowerInvariant());
+            // ? URL path
+            masks = masks.Replace("*url*", path);
+            //
+            masks = masks.Replace("*curl*", path);
+            //
+            masks = masks.Replace("*flatcurl*", path);
+            //
+            masks = masks.Replace("*subdirs*", "");
+            //
+            masks = masks.Replace("*flatsubdirs*", "");
+            //
+            masks = masks.Replace("*text*", "");
+            //
+            masks = masks.Replace("*flattext*", "");
+            //
+            masks = masks.Replace("*title*", "");
+            //
+            masks = masks.Replace("*flattitle*", "");
+            //
+            masks = masks.Replace("*qstring*", "");
+            //
+            masks = masks.Replace("*refer*", "");
+            //
+            masks = masks.Replace("*num*", "");
+            //
+            masks = masks.Replace("*inum*", "");
+            // Hour - Current system time hour.
+            masks = masks.Replace("*hh*", System.DateTime.Now.Hour.ToString());
+            // Minute - Current system time minute.
+            masks = masks.Replace("*mm*", System.DateTime.Now.Minute.ToString());
+            // Second - Current system time second.
+            masks = masks.Replace("*ss*", System.DateTime.Now.Second.ToString());
+            // Day - Current system time day.
+            masks = masks.Replace("*d*", System.DateTime.Now.Day.ToString());
+            // Month - Current system time month.
+            masks = masks.Replace("*m*", System.DateTime.Now.Month.ToString());
+            // Year - Current system time year.
+            masks = masks.Replace("*y*", System.DateTime.Now.Year.ToString());
+            return masks;
+        }
 
         // Starts download.
         private void button1_click(object sender, EventArgs e)
         {
             SaveSettings(SettingsFile);
-            // Download using a URL that points directly to the zoomify folder.   
+            // Downloads using a single URL.   
             if (radioButton1.Checked)
             {
-                DownloadDirectURL(textBox1.Text, textBox2.Text, textBox3.Text);
-                if (checkBox1.Checked)
+                if (isDirectURL(textBox1.Text))
                 {
-                    OpenFolder(this, null);
+                    //URL provided is a direct link to a zoomify image folder.
+                    DownloadDirectURL(textBox1.Text, textBox2.Text, FinalizeMask(textBox3.Text, textBox1.Text));
+                    if (checkBox1.Checked)
+                    {
+                        OpenFolder(this, null);
+                    }
+                }
+                else
+                {
+                    //URL provided is not a direct link to a zoomify folder.
+                    //Scan page for potential zoomify links.
+                    //Build relative links into fully formed URLs.
+                    //Batch download all found zoomify links.
+                    Console.WriteLine("Start scanning for zoomify links on this page.");
                 }
             }
             else if (radioButton2.Checked)
@@ -210,15 +325,37 @@ namespace ZoomifyDownloader
                 StreamReader streamReader = new StreamReader(textBox4.Text);
                 string text = streamReader.ReadToEnd();
                 streamReader.Close();
+                List<string> commands = new List<string>();
                 List<string> urls = new List<string>();
                 // Extract Paths
                 string[] filter = { "\r\n", "\r", "\n" };
-                urls.AddRange(text.Split(filter, StringSplitOptions.RemoveEmptyEntries));
+                commands.AddRange(text.Split(filter, StringSplitOptions.RemoveEmptyEntries));
                 // Validate that each item is a url.
-                foreach (string i in urls)
+                foreach (string i in commands)
                 {
-                    // Download & Save
-                    DownloadDirectURL(i, textBox2.Text, textBox3.Text, true);
+                    if (isDirectURL(i))
+                    {
+                        // Download & Save
+                        DownloadDirectURL(i, textBox2.Text, FinalizeMask(textBox3.Text, textBox1.Text), true);
+                    }
+                    else
+                    {
+                        //Check if it is a batch command.
+                        string labrat = i.ToLowerInvariant().Trim();
+                        if (labrat.IndexOf( batchCommandNewMask ) == 0)
+                        {
+                            //Then any text that comes after the command is now the new renaming mask.
+                            textBox3.Text = i.Substring(batchCommandNewMask.Length).Trim();
+                        }
+                        else if (labrat.IndexOf(batchCommandNewFolder) == 0)
+                        {
+                            textBox2.Text = i.Substring(batchCommandNewFolder.Length).Trim();
+                        }
+                        else if (labrat.IndexOf(batchCommandNewFormat) == 0)
+                        {
+                            outFormat = StringToImageFormat( labrat.Substring(batchCommandNewFormat.Length) );
+                        }
+                    }
                 }
                 if (checkBox1.Checked)
                 {
