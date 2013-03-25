@@ -44,6 +44,7 @@
             this.comboBox1 = new System.Windows.Forms.ComboBox();
             this.label1 = new System.Windows.Forms.Label();
             this.checkBox1 = new System.Windows.Forms.CheckBox();
+            this.label4 = new System.Windows.Forms.Label();
             this.groupBox1.SuspendLayout();
             this.SuspendLayout();
             // 
@@ -123,7 +124,7 @@
             // 
             this.progressBar1.Location = new System.Drawing.Point(12, 174);
             this.progressBar1.Name = "progressBar1";
-            this.progressBar1.Size = new System.Drawing.Size(193, 23);
+            this.progressBar1.Size = new System.Drawing.Size(243, 23);
             this.progressBar1.TabIndex = 9;
             this.progressBar1.UseWaitCursor = true;
             // 
@@ -203,12 +204,22 @@
             this.checkBox1.Text = "Open Folder On Finish";
             this.checkBox1.UseVisualStyleBackColor = true;
             // 
+            // label4
+            // 
+            this.label4.AutoSize = true;
+            this.label4.Location = new System.Drawing.Point(15, 200);
+            this.label4.Name = "label4";
+            this.label4.Size = new System.Drawing.Size(70, 13);
+            this.label4.TabIndex = 19;
+            this.label4.Text = "Time Taken :";
+            // 
             // Form1
             // 
             this.AcceptButton = this.button1;
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(620, 209);
+            this.ClientSize = new System.Drawing.Size(620, 222);
+            this.Controls.Add(this.label4);
             this.Controls.Add(this.checkBox1);
             this.Controls.Add(this.label1);
             this.Controls.Add(this.comboBox1);
@@ -249,6 +260,7 @@
         private System.Windows.Forms.ComboBox comboBox1;
         private System.Windows.Forms.Label label1;
         private System.Windows.Forms.CheckBox checkBox1;
+        private System.Windows.Forms.Label label4;
     }
 }
 

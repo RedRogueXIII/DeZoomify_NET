@@ -100,7 +100,7 @@ namespace ZoomifyDownloader
             string fileExtension = "." + format.ToString().ToLowerInvariant();            
             if (Dezoomify.StringIsLast(filename, fileExtension))
             {
-                filename = filename.Remove(fileExtension.Length);
+                filename = filename.Remove(filename.Length - fileExtension.Length);
             }
             string saveFilePath = path + "\\" + filename + fileExtension;
             switch (method)
@@ -140,10 +140,11 @@ namespace ZoomifyDownloader
         // Downloads a file and returns it's contents.
         public static string DownloadFile(string url)
         {
+            string responseFromServer = "";
             if (url != null && url.Length > 0)
             {
                 try
-                {
+                {                    
                     url = Uri.EscapeUriString(url);
                     // Start download of the image information file.
                     WebRequest request = WebRequest.Create(url);
@@ -152,28 +153,31 @@ namespace ZoomifyDownloader
                     // If required by the server, set the credentials.
                     request.Credentials = CredentialCache.DefaultCredentials;
                     // Get the response.
-                    WebResponse response = request.GetResponse();
-                    // Display the status.
-                    Console.WriteLine(((HttpWebResponse)response).StatusDescription);
-                    // Get the stream containing content returned by the server.
-                    Stream dataStream = response.GetResponseStream();
-                    // Open the stream using a StreamReader for easy access.
-                    StreamReader reader = new StreamReader(dataStream);
-                    // Read the content.
-                    string responseFromServer = reader.ReadToEnd();
-                    // Display the content.
-                    Console.WriteLine(responseFromServer);
-                    // Clean up the streams and the response.
-                    reader.Close();
-                    response.Close();
-                    return responseFromServer;
+                    using (WebResponse response = request.GetResponse())
+                    {
+                        // Display the status.
+                        Console.WriteLine(((HttpWebResponse)response).StatusDescription);
+                        // Get the stream containing content returned by the server.
+                        Stream dataStream = response.GetResponseStream();
+                        // Open the stream using a StreamReader for easy access.
+                        using (StreamReader reader = new StreamReader(dataStream))
+                        {
+                            // Read the content.
+                            responseFromServer = reader.ReadToEnd();
+                            // Display the content.
+                            Console.WriteLine(responseFromServer);
+                            // Clean up the streams and the response.
+                            reader.Close();
+                        }
+                        response.Close();
+                    }
                 }
                 catch
                 {
                     return "";
                 }
             }
-            return "";
+            return responseFromServer;
         }
 
         // Downloads a Stream - has to be closed manually.
@@ -185,20 +189,22 @@ namespace ZoomifyDownloader
             // If required by the server, set the credentials.
             request.Credentials = CredentialCache.DefaultCredentials;
             // Get the response.
-            WebResponse response = request.GetResponse();
-            // Display the status.
-            Console.WriteLine(((HttpWebResponse)response).StatusDescription);
-            // Get the stream containing content returned by the server.
-            outputStream = response.GetResponseStream();
-            // Open the stream using a StreamReader for easy access.
-            //StreamReader reader = new StreamReader(outputStream);
-            // Read the content.
-            //string responseFromServer = reader.ReadToEnd();
-            // Display the content.
-            //Console.WriteLine(responseFromServer);
-            // Clean up the streams and the response.
-            //reader.Close();
-            response.Close();
+            using (WebResponse response = request.GetResponse())
+            {
+                // Display the status.
+                Console.WriteLine(((HttpWebResponse)response).StatusDescription);
+                // Get the stream containing content returned by the server.
+                outputStream = response.GetResponseStream();
+                // Open the stream using a StreamReader for easy access.
+                //StreamReader reader = new StreamReader(outputStream);
+                // Read the content.
+                //string responseFromServer = reader.ReadToEnd();
+                // Display the content.
+                //Console.WriteLine(responseFromServer);
+                // Clean up the streams and the response.
+                //reader.Close();
+                response.Close();
+            }
             return outputStream;
         }
 
@@ -206,28 +212,17 @@ namespace ZoomifyDownloader
         public static bool TryGetImageProperties(string url)
         {
             bool fileExists = false;
-            string infoXMLFile = url;
             //Zoomify Images are stored in pieces with a control file.
             //Determine if the path is already linking to the proper file or not.
-            if (!infoXMLFile.Contains("ImageProperties.xml"))
+            if (!url.Contains("ImageProperties.xml"))
             {
-                infoXMLFile += "/ImageProperties.xml";
+                url += "/ImageProperties.xml";
             }
-            infoXMLFile = Uri.EscapeUriString(infoXMLFile);
-            WebRequest request = WebRequest.Create(infoXMLFile);
-            request.ContentType = "text/xml";
-            request.Method = "GET";
-            // If required by the server, set the credentials.
-            request.Credentials = CredentialCache.DefaultCredentials;
-            // Get the response.
-            WebResponse response = request.GetResponse();
-            // Display the status.
-            Console.WriteLine(((HttpWebResponse)response).StatusCode);
-            if (((HttpWebResponse)response).StatusCode == HttpStatusCode.OK)
+            url = Uri.EscapeUriString(url);
+            if (FileStatus(url) == HttpStatusCode.OK)
             {
                 fileExists = true;
             }
-            response.Close();
             return fileExists;
         }
 
@@ -293,6 +288,62 @@ namespace ZoomifyDownloader
             return output.ToArray();
         }
 
+        // Tests a URL to see if it is absolute or not.
+        public static bool isAbsoluteURL(string url)
+        {
+            try
+            {
+                Uri test = new Uri(url);
+                return test.IsAbsoluteUri;
+            }
+            catch
+            {
+                return false;
+            }            
+        }
+
+        // Extracts all direct links to zoomify URLs.
+        public static string[] ExtractURLs(string baseUrl, string htmlData)
+        {
+            XmlReaderSettings settings = new XmlReaderSettings();
+            settings.XmlResolver = null;
+            using(XmlReader htmldoc = XmlReader.Create(new StringReader(htmlData), settings) )
+            {
+                while (htmldoc.Read())
+                {
+                    switch (htmldoc.NodeType)
+                    {
+                        case XmlNodeType.Element:
+
+                            break;
+                        case XmlNodeType.Attribute:
+
+                            break;                    
+                        default:
+
+                            break;
+                    }
+                }
+            }
+
+            List<string> zoomifyURLs = new List<string>();
+            XmlDocument tags = new XmlDocument();
+             
+            tags.LoadXml(htmlData);
+            XmlNodeList links = tags.GetElementsByTagName("a");
+            for (int i = 0; i < links.Count; i++)
+            {
+                Uri test = new Uri(links[i].Attributes.GetNamedItem("href").Value);
+                Uri composite;
+                // If path is relative build absolute.
+                if ( !test.IsAbsoluteUri )
+                {
+                    Console.WriteLine(test.ToString());
+                }
+            }
+            return zoomifyURLs.ToArray();
+        }
+
         // Overwrites a target image pixels with another image at location x,y, using the new image's resolution.
         public static Bitmap OverlayImage(Bitmap target, Bitmap newImage, int x, int y)
         {
@@ -314,7 +365,56 @@ namespace ZoomifyDownloader
         }
         static int findZoom(int size)
         {
+            // The formula for calculating zoom is not 100% accurate to the zoomify algorithmn.
+            // Given the input an image 2734 x 4096, it returns a zoom level of 5 when it should return a 4.
+            // This is the only case where I found the zoom level was incorrectly calculated so far.
+            // To handle this, on exception it will try a single zoom level smaller.
             return System.Convert.ToInt32( Math.Floor( Math.Log(System.Convert.ToDouble(size)) / Math.Log(2) - 7 ) );
+        }
+
+        // Test to find if the file path is good or not.
+        static HttpStatusCode FileStatus(string url)
+        {
+            HttpStatusCode result = HttpStatusCode.BadRequest;
+            HttpWebRequest requestPic =  (HttpWebRequest) WebRequest.Create(url);
+            try
+            {
+                using (HttpWebResponse responsePic = (HttpWebResponse)requestPic.GetResponse())
+                {
+                    result = responsePic.StatusCode;
+                    responsePic.Close();
+                }
+            }
+            catch (System.Net.WebException ex)
+            {
+                Console.WriteLine(ex.ToString());
+                if (ex.Status == WebExceptionStatus.ProtocolError && ex.Response != null)
+                {
+                    result = ((HttpWebResponse)ex.Response).StatusCode;
+                } 
+                else
+                {
+                    result = HttpStatusCode.BadRequest;
+                }
+            }
+            return result;
+        }
+
+        static Bitmap GetTile(string url)
+        {
+            Bitmap result = null;
+            WebRequest requestPic = WebRequest.Create(url);
+            using (WebResponse responsePic = requestPic.GetResponse())
+            {
+                Console.WriteLine("GET: " + url);
+                Image webImage = Image.FromStream(responsePic.GetResponseStream());
+                if (webImage != null)
+                {
+                    result = new Bitmap(webImage);
+                }
+                responsePic.Close();
+            }
+            return result;
         }
 
         // Builds an image from multiple sources.
@@ -346,23 +446,35 @@ namespace ZoomifyDownloader
                     }
 
                     tileGroupCounter++;
-
-                    string url = imageData.path + "/TileGroup" + tileGroup + "/" + zoom + "-" + x + "-" + y + ".jpg";                    
-                    Console.WriteLine("GET: "+url);
-                    //Add a tile image to the canvas.
-
-                    //Method 1
-                    WebRequest requestPic = WebRequest.Create(url);
-                    WebResponse responsePic = requestPic.GetResponse();
-                    Image webImage = Image.FromStream(responsePic.GetResponseStream()); // Error
-                    if (webImage != null)
-                    {
-                        Bitmap currentTile = new Bitmap(webImage);
-                        output = OverlayImage(output, currentTile, x * imageData.tileSize, y * imageData.tileSize);     
+                    string url = imageData.path + "/TileGroup" + tileGroup + "/" + zoom + "-" + x + "-" + y + ".jpg";
+                    HttpStatusCode result = FileStatus(url);
+                    try
+                    {   
+                        //Try all zoom levels under the current.
+                        while( result != HttpStatusCode.OK && zoom > 0)
+                        {
+                            if (result == HttpStatusCode.NotFound)
+                            {
+                                zoom--;
+                                url = imageData.path + "/TileGroup" + tileGroup + "/" + zoom + "-" + x + "-" + y + ".jpg";
+                                result = FileStatus(url);
+                            }
+                            else
+                            {
+                                Console.WriteLine("Unexpected server error : " + FileStatus(url).ToString()); 
+                            }
+                        }
+                        //Add a tile image to the canvas.
+                        if (result == HttpStatusCode.OK)
+                        {
+                            output = OverlayImage(output, GetTile(url), x * imageData.tileSize, y * imageData.tileSize);
+                        }
                     }
-                    responsePic.Close();
-                    //loadingInformation((int)((float)loaded / (float)numTiles) * 100);
-                    loaded++;
+                    catch
+                    {
+                        Console.WriteLine("I don't know what happened.");
+                    }
+                    
                 }
             }
             //Return image.

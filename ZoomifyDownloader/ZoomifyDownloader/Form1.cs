@@ -24,12 +24,16 @@ namespace ZoomifyDownloader
         private static readonly string batchCommandNewMask = "*mask*";
         private static readonly string batchCommandNewFolder = "*dir*";
         private static readonly string batchCommandNewFormat = "*format*";
+        private static readonly string batchCommandNewConflict = "*conflict*";
 
         protected ImageFormat outFormat;
         public string SettingsFile = "settings.xml";
         protected string ExecutionPath;
         protected SaveFileConflictMode saveMode = SaveFileConflictMode.Ask;
         public string lastSavedFile = "";
+        private DateTime opStartTime;
+        private DateTime opEndTime;
+        private int itemsDownloaded = 0;
 
         public Form1()
         {
@@ -207,7 +211,7 @@ namespace ZoomifyDownloader
             // Clue 1 - URL does not point to a file ( has no file extension ).
             // Clue 2 - URL is relative ( has no domain. )
             // Test 1 - Try getting an Image Properties file from the URL.
-            if (!url.Contains("/") || !url.Contains(".")) 
+            if (url == null || url.Length == 0 || !url.Contains("/") || !url.Contains(".") || url.Trim().IndexOf("*") == 0) 
             {
                 Console.WriteLine("Yeah this isn't a url: "+url);
                 return false;
@@ -243,6 +247,33 @@ namespace ZoomifyDownloader
                 return ImageFormat.Tiff;
             }
             return defaultFormat;
+        }
+
+        // Converts string to a SaveFileConflictMode enum.
+        public static SaveFileConflictMode StringToConflictMode(string input) 
+        {
+            input = input.ToLowerInvariant();
+            if (input.Contains("ReplaceAlways".ToLowerInvariant())) 
+            {
+                return SaveFileConflictMode.ReplaceAlways;
+            }
+            else if (input.Contains("Replace".ToLowerInvariant()))
+            {
+                return SaveFileConflictMode.Replace;
+            }
+            else if (input.Contains("IncrementAlways".ToLowerInvariant()))
+            {
+                return SaveFileConflictMode.IncrementAlways;
+            }
+            else if (input.Contains("Increment".ToLowerInvariant()))
+            {
+                return SaveFileConflictMode.Increment;
+            }
+            else if (input.Contains("DoNothing".ToLowerInvariant()))
+            {
+                return SaveFileConflictMode.DoNothing;
+            }
+            return SaveFileConflictMode.Ask;
         }
 
         // Converts a string with masks to a final string.
@@ -290,12 +321,70 @@ namespace ZoomifyDownloader
             masks = masks.Replace("*m*", System.DateTime.Now.Month.ToString());
             // Year - Current system time year.
             masks = masks.Replace("*y*", System.DateTime.Now.Year.ToString());
+            
+            // Also - Remove Illegal Characters in the filenams.
+            string[] illegalChars = { "<", ">", ":","\"","\\","/","|","?","*" };
+            foreach (string i in illegalChars)
+            {
+                masks = masks.Replace(i, " ");
+            }
+
+            //Remove any unneccessary whitespace.
+            masks = masks.Trim();
+
             return masks;
+        }
+
+        private void ResetStats()
+        {
+            opStartTime = new DateTime();
+            opEndTime = new DateTime();
+            itemsDownloaded = 0;
+        }
+
+        private int ResolveIndirectURL(string url, string path, string filename)
+        {
+            int downloads = 0;
+            //URL provided is not a direct link to a zoomify folder.
+            //Scan page for potential zoomify links.
+            //Build relative links into fully formed URLs.
+            //Batch download all found zoomify links.
+            Console.WriteLine("Start scanning for zoomify links on this page. " + textBox1.Text);
+            // Check that the url is an absolute path.
+            if (Dezoomify.isAbsoluteURL(textBox1.Text))
+            {
+                Uri datapath = new Uri(textBox1.Text);
+                // Now find all zoomify links.
+                string htmlCode = Dezoomify.DownloadFile(textBox1.Text);
+                List<string> urls = new List<string>();
+                urls.AddRange(Dezoomify.ExtractURLs(datapath.Host, htmlCode));
+                foreach (string i in urls)
+                {
+                    if (isDirectURL(i))
+                    {
+                        // Download & Save
+                        DownloadDirectURL(i, textBox2.Text, FinalizeMask(textBox3.Text, textBox1.Text), true);
+                        downloads++;
+                    }
+                    else
+                    {
+                        Console.WriteLine(i + " is not a zoomify URL.");
+                    }
+                }
+            }
+            else
+            {
+                Console.WriteLine("Warning, URL was either relative, or malformed.");
+            }
+            return downloads;
         }
 
         // Starts download.
         private void button1_click(object sender, EventArgs e)
         {
+            ResetStats();
+            //Start Timer
+            opStartTime = System.DateTime.Now;
             SaveSettings(SettingsFile);
             // Downloads using a single URL.   
             if (radioButton1.Checked)
@@ -304,18 +393,11 @@ namespace ZoomifyDownloader
                 {
                     //URL provided is a direct link to a zoomify image folder.
                     DownloadDirectURL(textBox1.Text, textBox2.Text, FinalizeMask(textBox3.Text, textBox1.Text));
-                    if (checkBox1.Checked)
-                    {
-                        OpenFolder(this, null);
-                    }
+                    itemsDownloaded++;
                 }
                 else
                 {
-                    //URL provided is not a direct link to a zoomify folder.
-                    //Scan page for potential zoomify links.
-                    //Build relative links into fully formed URLs.
-                    //Batch download all found zoomify links.
-                    Console.WriteLine("Start scanning for zoomify links on this page.");
+                    itemsDownloaded += ResolveIndirectURL(textBox1.Text, textBox2.Text, FinalizeMask(textBox3.Text, textBox1.Text));
                 }
             }
             else if (radioButton2.Checked)
@@ -326,20 +408,50 @@ namespace ZoomifyDownloader
                 string text = streamReader.ReadToEnd();
                 streamReader.Close();
                 List<string> commands = new List<string>();
-                List<string> urls = new List<string>();
                 // Extract Paths
                 string[] filter = { "\r\n", "\r", "\n" };
                 commands.AddRange(text.Split(filter, StringSplitOptions.RemoveEmptyEntries));
                 // Validate that each item is a url.
                 foreach (string i in commands)
                 {
-                    if (isDirectURL(i))
+                    // Is it a URL?
+                    // Is the line a Direct URL?
+                    if ( Dezoomify.isAbsoluteURL(i) )
                     {
-                        // Download & Save
-                        DownloadDirectURL(i, textBox2.Text, FinalizeMask(textBox3.Text, textBox1.Text), true);
-                    }
+                        if (isDirectURL(i)) 
+                        {
+                            // Download & Save
+                            DownloadDirectURL(i, textBox2.Text, FinalizeMask(textBox3.Text, textBox1.Text), true);
+                            itemsDownloaded++;
+                        } 
+                        else
+                        {
+                            itemsDownloaded += ResolveIndirectURL(i, textBox2.Text, FinalizeMask(textBox3.Text, textBox1.Text));
+
+                            // Pull zoomify links.
+                            /*
+                            Uri path = new Uri(i);
+                            List<string> urls = new List<string>();
+                            string htmlCode = Dezoomify.DownloadFile(i);
+                            urls.AddRange(Dezoomify.ExtractURLs(path.Host, htmlCode));
+                            foreach (string iterator in urls)
+                            {
+                                if (isDirectURL(iterator))
+                                {
+                                    DownloadDirectURL(iterator, textBox2.Text, FinalizeMask(textBox3.Text, textBox1.Text), true);
+                                    itemsDownloaded++;
+                                }
+                                else
+                                {
+                                    Console.WriteLine(iterator + " is not a zoomify URL.");
+                                }
+                            }
+                             * */
+                        }                        
+                    }                   
                     else
                     {
+                        // Or is it a new parameter command?
                         //Check if it is a batch command.
                         string labrat = i.ToLowerInvariant().Trim();
                         if (labrat.IndexOf( batchCommandNewMask ) == 0)
@@ -355,14 +467,25 @@ namespace ZoomifyDownloader
                         {
                             outFormat = StringToImageFormat( labrat.Substring(batchCommandNewFormat.Length) );
                         }
+                        else if (labrat.IndexOf(batchCommandNewConflict) == 0)
+                        {
+                            saveMode = StringToConflictMode(labrat.Substring(batchCommandNewConflict.Length));
+                        }
+                        else
+                        {
+                            Console.WriteLine("Bad line input :" + i);
+                        }
                     }
-                }
-                if (checkBox1.Checked)
-                {
-                    OpenFolder(this, null);
-                }
-                saveMode = SaveFileConflictMode.Ask;
+                }                
             }
+            if (checkBox1.Checked)
+            {
+                OpenFolder(this, null);
+            }
+            //End Timer
+            opEndTime = System.DateTime.Now;
+            saveMode = SaveFileConflictMode.Ask;
+            label4.Text = "Time Taken : " + (opEndTime - opStartTime).ToString() + " seconds. Items Downloaded : " + itemsDownloaded;
             
         }
         // Opens the folder where the images will be downloaded to.
