@@ -342,34 +342,31 @@ namespace ZoomifyDownloader
             itemsDownloaded = 0;
         }
 
-        private int ResolveIndirectURL(string url, string path, string filename)
+        private int ResolveIndirectURL(string baseURL, string path, string filename)
         {
+            // Since we're here this is probably the mode you want.
+            saveMode = SaveFileConflictMode.IncrementAlways;
             int downloads = 0;
             //URL provided is not a direct link to a zoomify folder.
             //Scan page for potential zoomify links.
             //Build relative links into fully formed URLs.
             //Batch download all found zoomify links.
-            Console.WriteLine("Start scanning for zoomify links on this page. " + textBox1.Text);
+            Console.WriteLine("Start scanning for zoomify links on this page : " + baseURL);
             // Check that the url is an absolute path.
-            if (Dezoomify.isAbsoluteURL(textBox1.Text))
+            if (Dezoomify.isAbsoluteURL(baseURL))
             {
-                Uri datapath = new Uri(textBox1.Text);
+                Uri datapath = new Uri(baseURL);
                 // Now find all zoomify links.
                 string htmlCode = Dezoomify.DownloadFile(textBox1.Text);
                 List<string> urls = new List<string>();
-                urls.AddRange(Dezoomify.ExtractURLs(datapath.Host, htmlCode));
+
+                urls.AddRange(Dezoomify.ExtractURLs(baseURL, htmlCode));
+
                 foreach (string i in urls)
                 {
-                    if (isDirectURL(i))
-                    {
-                        // Download & Save
-                        DownloadDirectURL(i, textBox2.Text, FinalizeMask(textBox3.Text, textBox1.Text), true);
-                        downloads++;
-                    }
-                    else
-                    {
-                        Console.WriteLine(i + " is not a zoomify URL.");
-                    }
+                    // Download & Save
+                    DownloadDirectURL(i, textBox2.Text, FinalizeMask(textBox3.Text, textBox1.Text), true);
+                    downloads++;
                 }
             }
             else
@@ -427,26 +424,6 @@ namespace ZoomifyDownloader
                         else
                         {
                             itemsDownloaded += ResolveIndirectURL(i, textBox2.Text, FinalizeMask(textBox3.Text, textBox1.Text));
-
-                            // Pull zoomify links.
-                            /*
-                            Uri path = new Uri(i);
-                            List<string> urls = new List<string>();
-                            string htmlCode = Dezoomify.DownloadFile(i);
-                            urls.AddRange(Dezoomify.ExtractURLs(path.Host, htmlCode));
-                            foreach (string iterator in urls)
-                            {
-                                if (isDirectURL(iterator))
-                                {
-                                    DownloadDirectURL(iterator, textBox2.Text, FinalizeMask(textBox3.Text, textBox1.Text), true);
-                                    itemsDownloaded++;
-                                }
-                                else
-                                {
-                                    Console.WriteLine(iterator + " is not a zoomify URL.");
-                                }
-                            }
-                             * */
                         }                        
                     }                   
                     else

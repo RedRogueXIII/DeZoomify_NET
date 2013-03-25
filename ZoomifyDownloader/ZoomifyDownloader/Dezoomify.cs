@@ -302,45 +302,178 @@ namespace ZoomifyDownloader
             }            
         }
 
-        // Extracts all direct links to zoomify URLs.
-        public static string[] ExtractURLs(string baseUrl, string htmlData)
+
+        // Attempt at getting XmlDocument to work parsing html. Failed so this is now useless.
+        public static string RemoveDocType(string xmlData)
         {
+            string search = ("<!DOCTYPE").ToLowerInvariant();
+            if(xmlData.ToLowerInvariant().Contains(search))
+            {
+                int start, end;
+                start = xmlData.ToLowerInvariant().IndexOf(search, 0);
+                end = xmlData.ToLowerInvariant().IndexOf(">", start + search.Length);
+                xmlData = xmlData.Remove(start, end - start + 1);
+            }
+            return xmlData;
+        }
+
+        // XmlReader with my test html is broken. Useless.
+        public static string[] GetElementAttributeOfName(string xmlData, string elementName, string attributeName)
+        {
+            List<string> output = new List<string>();
             XmlReaderSettings settings = new XmlReaderSettings();
             settings.XmlResolver = null;
-            using(XmlReader htmldoc = XmlReader.Create(new StringReader(htmlData), settings) )
+            settings.DtdProcessing = DtdProcessing.Ignore;
+            using (XmlReader htmldoc = XmlReader.Create(new StringReader(xmlData), settings))
             {
                 while (htmldoc.Read())
                 {
+                    /*
                     switch (htmldoc.NodeType)
                     {
                         case XmlNodeType.Element:
-
+                            Console.WriteLine("Start Element {0}", htmldoc.Name);
                             break;
                         case XmlNodeType.Attribute:
-
-                            break;                    
+                            //Console.WriteLine("Start Value {0}", htmldoc.GetAttribute("href"));
+                            break;
+                        case XmlNodeType.Text:
+                            Console.WriteLine("Text Node: {0}", htmldoc.Value);
+                            break;
+                        case XmlNodeType.EndElement:
+                            Console.WriteLine("End Element {0}", htmldoc.Name);
+                            break;
                         default:
 
                             break;
                     }
+                     * */
+                    if (htmldoc.NodeType == XmlNodeType.Element && htmldoc.Name == elementName && htmldoc.GetAttribute(attributeName).Length > 0)
+                    {
+                        output.Add(htmldoc.GetAttribute(attributeName));
+                    }
                 }
-            }
+            }   
+            return output.ToArray();
+        }
 
-            List<string> zoomifyURLs = new List<string>();
-            XmlDocument tags = new XmlDocument();
-             
-            tags.LoadXml(htmlData);
-            XmlNodeList links = tags.GetElementsByTagName("a");
-            for (int i = 0; i < links.Count; i++)
+        // Hack code to grab all links on webpage. Don't want to include dependencies on external HTML parsing library.
+        private static string[] GetLinks(string htmlData)
+        {
+            List<string> output = new List<string>();
+            int iterator = 0;
+            while (iterator < htmlData.Length)
             {
-                Uri test = new Uri(links[i].Attributes.GetNamedItem("href").Value);
-                Uri composite;
-                // If path is relative build absolute.
-                if ( !test.IsAbsoluteUri )
+                if (htmlData.Substring(iterator).Contains("<a"))
                 {
-                    Console.WriteLine(test.ToString());
+                    int start = htmlData.IndexOf("<a", iterator);
+                    int end = htmlData.IndexOf(">", start);
+                    string element = htmlData.Substring(start, end - start + 1);
+                    if( element.Contains("href") )
+                    {
+                        int valueStart = element.IndexOf("href");
+                        valueStart = element.IndexOf("\"", valueStart);
+                        int valueEnd = element.IndexOf("\"", valueStart + 1);
+                        string link = element.Substring(valueStart, valueEnd - valueStart + 1);
+                        if (!link.Contains("javascript") && !link.Contains("#"))
+                        {
+                            if (link.Contains("."))
+                            {
+                                if (link.LastIndexOf(".") < link.LastIndexOf("/"))
+                                {
+                                    output.Add(link);
+                                }
+                            }
+                            else
+                            {
+                                output.Add(link);
+                            }
+                        }                        
+                    }
+                    iterator = end;
+                }
+                else
+                {
+                    iterator = htmlData.Length;
                 }
             }
+            return output.ToArray();
+        }
+
+        // Checks if input is an absolute url, fixes that if not.
+        private static string ToAbsoluteURL(string input, string domain)
+        {
+            // Getting rid of junk.
+            input = input.Replace("\"", "");
+            input = input.Trim();            
+            // Is absolute already ?
+            if (input.Contains("http://") )
+            {
+                return input;
+            }
+            while (input.IndexOf("//") == 0)
+            {
+                Console.WriteLine("This is a relative path that moves back a directory.");
+                domain = "http://" + new Uri(domain).Host;
+                input = input.Remove(0, 1);
+                input = domain + input;
+            }
+            if (input.IndexOf("/") == 0)
+            {
+                Console.WriteLine("This is a relative path that uses the current dirctory.");
+                if(domain.LastIndexOf("/") == domain.Length - 1)                
+                {
+                    domain = domain.Remove(domain.Length - 1);
+                }
+                //domain.Substring(0, domain.LastIndexOf("/"));
+                input = domain + input;
+            }
+            return input;
+        }
+
+        // Checks if the domain of input is the same as the one specified.
+        public static bool MatchDomain(string input, string domain)
+        {
+            return (new Uri(input).Host == new Uri(domain).Host);
+        }
+
+        // Extracts all direct links to zoomify URLs.
+        public static string[] ExtractURLs(string baseUrl, string htmlData)
+        {
+            List<string> zoomifyURLs = new List<string>();
+
+            List<string> links = new List<string>();
+            links.AddRange( GetLinks(htmlData) );
+            // Remove any duplicates
+            for (int i = links.Count - 1; i > 0; i--)
+            {
+                for (int j = 0; j < i; j++)
+                {
+                    if (links[i] == links[j])
+                    {
+                        links.RemoveAt(i);
+                        break;
+                    }
+                }
+            }
+            // Sanitize Links
+            for (int i = links.Count - 1; i > 0; i--)
+            {
+                links[i] = ToAbsoluteURL(links[i], baseUrl);
+                if (!MatchDomain(links[i], baseUrl))
+                {
+                    links.RemoveAt(i);
+                }
+                else if (TryGetImageProperties(links[i]))
+                {
+                    zoomifyURLs.Add(links[i]);
+                }
+                else
+                {
+                    Console.WriteLine(links[i] + " was not a zoomify url.");
+                }
+            }
+            zoomifyURLs.Reverse();
             return zoomifyURLs.ToArray();
         }
 
