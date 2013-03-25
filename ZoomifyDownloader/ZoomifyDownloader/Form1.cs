@@ -357,7 +357,7 @@ namespace ZoomifyDownloader
             {
                 Uri datapath = new Uri(baseURL);
                 // Now find all zoomify links.
-                string htmlCode = Dezoomify.DownloadFile(textBox1.Text);
+                string htmlCode = Dezoomify.DownloadFile(baseURL);
                 List<string> urls = new List<string>();
 
                 urls.AddRange(Dezoomify.ExtractURLs(baseURL, htmlCode));
@@ -365,7 +365,7 @@ namespace ZoomifyDownloader
                 foreach (string i in urls)
                 {
                     // Download & Save
-                    DownloadDirectURL(i, textBox2.Text, FinalizeMask(textBox3.Text, textBox1.Text), true);
+                    DownloadDirectURL(i, textBox2.Text, FinalizeMask(textBox3.Text, baseURL), true);
                     downloads++;
                 }
             }
@@ -418,12 +418,12 @@ namespace ZoomifyDownloader
                         if (isDirectURL(i)) 
                         {
                             // Download & Save
-                            DownloadDirectURL(i, textBox2.Text, FinalizeMask(textBox3.Text, textBox1.Text), true);
+                            DownloadDirectURL(i, textBox2.Text, FinalizeMask(textBox3.Text, i), true);
                             itemsDownloaded++;
                         } 
                         else
                         {
-                            itemsDownloaded += ResolveIndirectURL(i, textBox2.Text, FinalizeMask(textBox3.Text, textBox1.Text));
+                            itemsDownloaded += ResolveIndirectURL(i, textBox2.Text, FinalizeMask(textBox3.Text, i));
                         }                        
                     }                   
                     else
